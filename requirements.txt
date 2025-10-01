@@ -1,0 +1,15 @@
+streamlit
+python-dotenv
+requests
+numpy
+pandas
+langchain-community
+openai
+langchain
+langchain-openai
+streamlit-chat
+anthropic
+langchain_anthropic
+psycopg2-binary
+streamlit-autorefresh
+streamlit-cookies-controller
