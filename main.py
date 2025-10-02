@@ -454,7 +454,8 @@ if user_msg:
         print("\nOptimized Answer:", base_response)
         if final_act == "end_conversation_act":
             if  st.session_state.finish == 1:
-                base_response = base_response+'  '+ 'As well as, I want to finish this conversation.'
+                # base_response = base_response+'  '+ 'As well as, I want to finish this conversation.'
+                base_response = base_response+'  '+ 'それから、この会話を終わりにしたいと思います。'
                 st.session_state.finish +=3
         
         # Save in Session
