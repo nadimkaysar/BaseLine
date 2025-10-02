@@ -68,7 +68,7 @@ def response_Generation_from_GPT4_test(tem, user_query,memory_buffer):
   conversation = ConversationChain(memory=memory_buffer, 
                                    prompt=prompt_template, 
                                    llm=ChatOpenAI(
-                                       model= 'gpt-4o',
+                                       model= 'gpt-4.1',
                                        temperature=0.6, 
                                        openai_api_key=OPENAI_API_KEY), 
                                        verbose=True)
