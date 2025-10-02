@@ -48,7 +48,7 @@ def response_Genration_from_GPT4(tem, user_query,conversation_memory):
   conversation = ConversationChain(memory=conversation_memory, 
                                    prompt=prompt_template, 
                                    llm=ChatOpenAI(
-                                       model= 'gpt-4o',
+                                       model= 'gpt-4.1',
                                        temperature=0.6, 
                                        openai_api_key=OPENAI_API_KEY), verbose=True)
   response = conversation.predict(input=user_query)
