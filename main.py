@@ -3,7 +3,7 @@ from streamlit_chat import message
 import openai
 import os
 import Source.response as Response
-import Source.DialogPrompt as Prompt
+import Source.SystemPrompt as Prompt
 # import Source.mcts as MCTS
 import json
 # import Source.treegraph as treeBuild
