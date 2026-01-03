@@ -48,7 +48,7 @@ def response_Genration_from_GPT4(tem, user_query,conversation_memory):
   conversation = ConversationChain(memory=conversation_memory, 
                                    prompt=prompt_template, 
                                    llm=ChatOpenAI(
-                                       model= 'gpt-4.1',
+                                       model= 'gpt-4o',
                                        temperature=0.6, 
                                        openai_api_key=OPENAI_API_KEY), verbose=True)
   response = conversation.predict(input=user_query)
@@ -68,7 +68,7 @@ def response_Generation_from_GPT4_test(tem, user_query,memory_buffer):
   conversation = ConversationChain(memory=memory_buffer, 
                                    prompt=prompt_template, 
                                    llm=ChatOpenAI(
-                                       model= 'gpt-4.1',
+                                       model= 'gpt-4o',
                                        temperature=0.6, 
                                        openai_api_key=OPENAI_API_KEY), 
                                        verbose=True)
@@ -365,3 +365,7 @@ def SubsetSelection_Anthropic_test(prompt):
         ]
     )
     return message.content[0].text
+
+
+
+
