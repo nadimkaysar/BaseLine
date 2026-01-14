@@ -193,7 +193,7 @@ if user_msg:
         response = Response.response_Generation_from_GPT4_test(promptType,user_msg,memory)
         
         if st.session_state.selfdis_value == 1:
-            response =  response +'  '+ "Finally, Keep in mind this is the problem understanding phase, I want to understand you to support you best."  
+            response =  response +'  '+ "Finally, please keep in mind that this is the problem-understanding phase. I will ask a few questions to better understand your situation so I can support you effectively."  
             # response =  response +'  '+ "最後に、これは問題を理解するための段階であることを忘れないでください。あなたをできるだけよく支えるために、私はあなたのことを理解したいと思っています。"
             st.session_state.selfdis_value += 2
         
