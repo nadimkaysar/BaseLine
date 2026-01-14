@@ -124,7 +124,7 @@ if user_msg:
     # promptInitilize and StateDefine
     # stateSelectionPrompt = PromptInisilization.stateDefine(history, user_msg)
    
-    if st.session_state.count >= 1:       
+    if st.session_state.count >= 1 or st.session_state.count == 0:       
         # Determine The Reward GPT
         Subset_prompt  = PromptInisilization.determine_reward_final(message_history,user_msg,st.session_state.action)
         actual_reward = Response.SubsetSelection(Subset_prompt)
@@ -169,10 +169,10 @@ if user_msg:
         
         # promptType = PromptInisilization.EnglishConversationPromptForGPT4oV8_testing(message_history,best_action,user_msg)
         # promptType = PromptInisilization.EnglishConversationPromptFor_Student_V11(message_history,best_action,user_msg)
-        if st.session_state.count >= 1 and st.session_state.count <= 8:
+        if st.session_state.count <= 8:
              promptType = PromptInisilization.self_explorerV2(message_history,user_msg,st.session_state.depression_level,st.session_state.anxiety_level,best_action)
         
-        if st.session_state.count >= 9:
+        if st.session_state.count > 8:
              promptType = PromptInisilization.dbt_counseling(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
         
         # promptType = PromptInisilization.dbt_support(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
