@@ -169,10 +169,10 @@ if user_msg:
         
         # promptType = PromptInisilization.EnglishConversationPromptForGPT4oV8_testing(message_history,best_action,user_msg)
         # promptType = PromptInisilization.EnglishConversationPromptFor_Student_V11(message_history,best_action,user_msg)
-        if st.session_state.count <= 8:
+        if st.session_state.count <= 5:
              promptType = PromptInisilization.self_explorerV2(message_history,user_msg,st.session_state.depression_level,st.session_state.anxiety_level,best_action)
         
-        if st.session_state.count > 8:
+        if st.session_state.count > 5:
              promptType = PromptInisilization.dbt_counseling(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
         
         # promptType = PromptInisilization.dbt_support(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
