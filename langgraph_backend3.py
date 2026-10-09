@@ -21,7 +21,7 @@ import streamlit as st
 # ============================================================
 
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-db_API_KEY = st.secrets["DB_API_KEY"]
+db_API_KEY = st.secrets["DB_API_KEY_B1"]
 
 
 # ============================================================
