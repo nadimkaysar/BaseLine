@@ -1,221 +1,1102 @@
 import streamlit as st
-from streamlit_chat import message
-import openai
-import os
-import Source.response as Response
-import Source.SystemPrompt as PromptInisilization
-# import Source.mcts as MCTS
-# import Source.mctsv2 as MCTSv2
+from langgraph_backend3 import (
+    chatbot,
+    register_thread,
+    retrieve_threads_for_patient,
+    thread_belongs_to_patient,
+)
+from langchain_core.messages import HumanMessage
+import uuid
+import response
+import gameTree
 import json
-import Source.treegraph as treeBuild
-# import Source.treegraphCriteria as treeBuildCriteria
-from langchain.memory import ConversationBufferMemory
-from streamlit_cookies_controller import CookieController
-from streamlit_autorefresh import st_autorefresh
-cookie_controller = CookieController()
-from time import sleep
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, timezone
+# ============================================================
+# THREAD ID
+# ============================================================
 
-memory = ConversationBufferMemory(human_prefix="human", ai_prefix="AI",memory_key="history", return_messages=True)
+def generate_thread_id():
 
-# Create a folder for all chat logs
-# LOG_DIR = "/Volumes/Research/Code/MentalHealthSystem/Log/P3"
-# os.makedirs(LOG_DIR, exist_ok=True)
+    return str(
+        uuid.uuid4()
+    )
 
-# Create unique session log file
-# if "log_file" not in st.session_state:
-#     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-#     st.session_state.log_file = os.path.join(LOG_DIR, f"chat_{timestamp}.txt")
+# ============================================================
+# CURRENT TIME
+# ============================================================
 
-# # Function to log messages to the session-specific file
-# def log_message(role, action, message):
-#     timestamp_time = datetime.now().strftime("%H:%M:%S")
-#     log_entry = f"[{timestamp_time}] {action} {role}: {message}\n"
-#     with open(st.session_state.log_file, "a", encoding="utf-8") as f:
-#         f.write(log_entry)
+def get_current_time():
+
+    return datetime.now(
+        timezone.utc
+    ).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
-USER_NAME = "user"
-ASSISTANT_NAME = "assistant"
-State_component = "State"
-end_greeting = ['Thanks','thanks','Thank You','thank you','Thanks for your information','thanks for your instruction', 'thanks for your suggestions']
+# ============================================================
+# ADD THREAD TO CURRENT SESSION
+# ============================================================
 
-message_history = []
+def add_thread(thread_id):
 
-patient_messages = []
-therapist_messages = []
-therapist_messages_last_utterace = ""
-patient_messages_last_utterace = ""
-subset_list =[]
-formatted_data = []
+    if "chat_threads" not in st.session_state:
 
-if "depression_level" not in st.session_state:
-    st.session_state.depression_level = None
+        st.session_state[
+            "chat_threads"
+        ] = []
 
-if "anxiety_level" not in st.session_state:
-    st.session_state.anxiety_level = None
+    if thread_id not in st.session_state[
+        "chat_threads"
+    ]:
 
-def archive_messages(log_conversation_from_session):
-    # Iterate through messages and separate them based on the 'Name' key
-    """
-    for message in log_conversation_from_session:
-        message_history.append((message['Name'],':', message['msg'],' \n'))
+        st.session_state[
+            "chat_threads"
+        ].append(
+            thread_id
+        )
 
-    print("The Message")
-    print(message_history)"""
-    
-    for message in log_conversation_from_session:
-        if message['name'] == 'user':
-            patient_messages.append(message['msg'])
-        elif message['name'] == 'assistant':
-            therapist_messages.append(message['msg'])
-    
-    for i in range(len(patient_messages)):
-        message_history.append("Patient :" + patient_messages[i] + '\n')
-        message_history.append("Therapist :" + therapist_messages[i] + '\n')
-    
-    return message_history
 
-st.title("Well-Being Support For Student")
-if "chat_log" not in st.session_state:
-    st.session_state.chat_log = []
-    st.session_state.state_log = []
+# ============================================================
+# CREATE NEW THREAD
+# ============================================================
 
-utterance_list = []
-user_msg = st.chat_input("Enter Your Thought")
+def create_new_thread(patient_id):
 
-if 'count' not in st.session_state: 
-    st.session_state.count = 0
+    thread_id = generate_thread_id()
 
-if st.chat_input:
-    st.session_state.count += 1
+    st.session_state[
+        "thread_id"
+    ] = thread_id
 
-if 'FlagState' not  in st.session_state:
-    st.session_state.FlagState = None
+    st.session_state[
+        "message_history"
+    ] = []
 
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = None
+    st.session_state[
+        "history"
+    ] = []
+
+    st.session_state[
+        "action"
+    ] = []
+
+    add_thread(
+        thread_id
+    )
+
+    # Save PatientID <-> ThreadID relationship
+    register_thread(
+        thread_id,
+        patient_id
+    )
+
+    return thread_id
+
+
+# ============================================================
+# RESET CHAT / CREATE NEW CONVERSATION
+# ============================================================
+
+def reset_chat():
+
+    patient_id = st.session_state.get(
+        "patient_id",
+        ""
+    ).strip()
+
+    if not patient_id:
+
+        return
+
+    create_new_thread(
+        patient_id
+    )
+
+
+# ============================================================
+# LOAD CONVERSATION
+# ============================================================
+
+def load_conversation(
+    thread_id,
+    patient_id
+):
+
+    # --------------------------------------------------------
+    # Security check:
+    # Only load a thread belonging to this patient.
+    # --------------------------------------------------------
+
+    if not thread_belongs_to_patient(
+        thread_id,
+        patient_id
+    ):
+
+        st.sidebar.error(
+            "This conversation does not belong to this Patient ID."
+        )
+
+        return []
+
+    try:
+
+        state = chatbot.get_state(
+            config={
+                "configurable": {
+                    "thread_id": str(
+                        thread_id
+                    )
+                }
+            }
+        )
+
+        if state:
+
+            return state.values.get(
+                "messages",
+                []
+            )
+
+        return []
+
+    except Exception as e:
+
+        st.sidebar.error(
+            f"Could not load conversation: {e}"
+        )
+
+        return []
+
+
+# ============================================================
+# REBUILD SESSION HISTORY FROM LANGGRAPH MESSAGES
+# ============================================================
+
+def rebuild_conversation_history(
+    messages
+):
+
+    temp_messages = []
+
+    history = []
+
+    for msg in messages:
+
+        # ----------------------------------------------------
+        # Determine role
+        # ----------------------------------------------------
+
+        if isinstance(
+            msg,
+            HumanMessage
+        ):
+
+            role = "user"
+
+        else:
+
+            role = "assistant"
+
+
+        # ----------------------------------------------------
+        # Timestamp
+        # ----------------------------------------------------
+
+        timestamp = (
+            "Time not available"
+        )
+
+        if hasattr(
+            msg,
+            "additional_kwargs"
+        ):
+
+            timestamp = (
+                msg.additional_kwargs.get(
+                    "timestamp",
+                    "Time not available"
+                )
+            )
+
+
+        # ----------------------------------------------------
+        # Component
+        # ----------------------------------------------------
+
+        component = None
+
+        if hasattr(
+            msg,
+            "additional_kwargs"
+        ):
+
+            component = (
+                msg.additional_kwargs.get(
+                    "component"
+                )
+            )
+
+
+        # ----------------------------------------------------
+        # Message history
+        # ----------------------------------------------------
+
+        temp_message = {
+            "role": role,
+            "content": msg.content,
+            "time": timestamp
+        }
+
+
+        if (
+            role == "assistant"
+            and component
+        ):
+
+            temp_message[
+                "component"
+            ] = component
+
+
+        temp_messages.append(
+            temp_message
+        )
+
+
+        # ----------------------------------------------------
+        # History for reward/game tree
+        # ----------------------------------------------------
+
+        history.append({
+            "role": role,
+            "content": msg.content
+        })
+
+
+    return temp_messages, history
+
+
+# ============================================================
+# CONVERSATION TXT
+# ============================================================
+
+def create_conversation_txt(
+    thread_id
+):
+
+    messages = st.session_state.get(
+        "message_history",
+        []
+    )
+
+    if not messages:
+
+        return "No conversation history found."
+
+    lines = []
+
+    for message in messages:
+
+        timestamp = message.get(
+            "time",
+            " "
+        )
+
+        role = message.get(
+            "role",
+            "unknown"
+        )
+
+        content = message.get(
+            "content",
+            ""
+        )
+
+        if role == "user":
+
+            lines.append(
+                f"{timestamp}, User: , {content}"
+            )
+
+        elif role == "assistant":
+
+            component = message.get(
+                "component",
+                "Not specified"
+            )
+
+            lines.append(
+                f"{timestamp}, {component}, Assistant:, {content}"
+            )
+
+        else:
+
+            lines.append(
+                f"{timestamp}, {role.capitalize()}, {content}"
+            )
+
+    return "\n".join(
+        lines
+    )
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.title(
+    "DBT-wellMind-GameTree"
+)
+
+
+# ============================================================
+# PATIENT ID
+# ============================================================
+
+PatinetID = st.sidebar.text_input(
+    "Enter Your ID",
+    key="patient_id"
+)
+
+PatinetID = PatinetID.strip()
+
+
+# ============================================================
+# INITIAL SESSION VARIABLES
+# ============================================================
+
+if "message_history" not in st.session_state:
+
+    st.session_state[
+        "message_history"
+    ] = []
+
+
+if "history" not in st.session_state:
+
+    st.session_state[
+        "history"
+    ] = []
+
 
 if "action" not in st.session_state:
-    st.session_state.action = None
 
-if "state_value" not in st.session_state:
-    st.session_state.state_value = None
+    st.session_state[
+        "action"
+    ] = []
 
-if "selfdis_value" not in st.session_state:
-    st.session_state.selfdis_value = 1
 
-if "risk_value" not in st.session_state:
-   st.session_state.risk_value = 0
+if "chat_threads" not in st.session_state:
 
-print('Count = ' + str(st.session_state.count))
+    st.session_state[
+        "chat_threads"
+    ] = []
 
-if user_msg:
-    for chat in st.session_state.chat_log:
-        with st.chat_message(chat["name"]):
-            st.write(chat["msg"])
 
-    with st.chat_message(USER_NAME):
-        st.write(user_msg)
-    
-    # if 'action' not in st.session_state:
-    # st.session_state.action = None
+if "thread_id" not in st.session_state:
 
-    # promptInitilize and StateDefine
-    # stateSelectionPrompt = PromptInisilization.stateDefine(history, user_msg)
-   
-    if st.session_state.count >= 1 or st.session_state.count == 0:       
-        # Determine The Reward GPT
-        Subset_prompt  = PromptInisilization.determine_reward_final(message_history,user_msg,st.session_state.action)
-        actual_reward = Response.SubsetSelection(Subset_prompt)
-        print("Before Extract Reawrd: ",actual_reward)
-        reward_data = json.loads(actual_reward)
-        print("Reward After Json Data", reward_data)
+    st.session_state[
+        "thread_id"
+    ] = None
 
-        # Determine The Reward Claude
-        # Subset_prompt  = PromptInisilization.determine_reward_final(message_history,user_msg,st.session_state.action)
-        # actual_reward = Response.SubsetSelection_Claude(Subset_prompt)
-        # print("Before Extract Reawrd: ",actual_reward)
-        # reward_data = json.loads(actual_reward)
-        # print("Reward After Json Data", reward_data)
-        
-        # Determine The Reward with Criteria OpenAI
-        # Subset_prompt  = PromptInisilization.subset_detection_with_weight(message_history,user_msg,st.session_state.action)
-        # actual_reward = Response.SubsetSelection(Subset_prompt)
-        # print("Before Extract Reawrd: ",actual_reward)
-        # reward_data = json.loads(actual_reward)
-        # print("Reward After Json Data", reward_data)
 
-        # Determine The Reward with Criteria Antropic
-        # Subset_prompt  = PromptInisilization.subset_detection_with_weight(message_history,user_msg,st.session_state.action)
-        # actual_reward = Response.SubsetSelection_Anthropic_test(Subset_prompt)
-        # print("Before Extract Reawrd: ",actual_reward)
-        # reward_data = json.loads(actual_reward)
-        # print("Reward After Json Data", reward_data)
-    
-    
-        # Data Extraction
-        best_action = treeBuild.dataImport(reward_data)
+if "active_patient_id" not in st.session_state:
 
-        # st.session_state.action = best_action
-        history = archive_messages(st.session_state.chat_log)
-        print(history)
-        # MCTS Code Implimentation
-        # mcts_prompt = MCTSv2.MCTS_prompt(history,user_msg)
-        # best_action = MCTSv2.call_MCTS(mcts_prompt)
-        # print("Test Subset from MCTS", best_action)
-        # subset = "problem_understand"
+    st.session_state[
+        "active_patient_id"
+    ] = None
 
-        
-        # promptType = PromptInisilization.EnglishConversationPromptForGPT4oV8_testing(message_history,best_action,user_msg)
-        # promptType = PromptInisilization.EnglishConversationPromptFor_Student_V11(message_history,best_action,user_msg)
-        if st.session_state.count <= 5:
-             promptType = PromptInisilization.self_explorerV2(message_history,user_msg,st.session_state.depression_level,st.session_state.anxiety_level,best_action)
-        
-        if st.session_state.count > 5:
-             promptType = PromptInisilization.dbt_counseling(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
-        
-        # promptType = PromptInisilization.dbt_support(message_history,best_action,user_msg,st.session_state.depression_level,st.session_state.anxiety_level)
-        # promptType = PromptInisilization.JapaneseConversationPromptFor_Student_V12(message_history,best_action,user_msg)
-        # promptType = PromptInisilization.EnglishConversationPromptForGPT4oV7_japansese(message_history,best_action,user_msg)
-    
-        # promptType = PromptInisilization.JapaneseConversationPromptForGPT4o(message_history,subset,patient_messages)
-    
-        # Save in Memory for Management
-        if st.session_state.chat_history is None:
-            st.session_state.chat_history = []
+
+# ============================================================
+# PATIENT ID CHANGE / INITIALIZATION
+# ============================================================
+
+if PatinetID:
+
+    # --------------------------------------------------------
+    # First time entering Patient ID
+    # OR Patient ID has changed
+    # --------------------------------------------------------
+
+    if (
+        st.session_state[
+            "active_patient_id"
+        ]
+        != PatinetID
+    ):
+
+        # ----------------------------------------------------
+        # Remember current Patient ID
+        # ----------------------------------------------------
+
+        st.session_state[
+            "active_patient_id"
+        ] = PatinetID
+
+
+        # ----------------------------------------------------
+        # Retrieve only this patient's conversations
+        # ----------------------------------------------------
+
+        patient_threads = (
+            retrieve_threads_for_patient(
+                PatinetID
+            )
+        )
+
+
+        st.session_state[
+            "chat_threads"
+        ] = patient_threads
+
+
+        # ====================================================
+        # CASE 1:
+        # Previous conversations exist
+        # ====================================================
+
+        if patient_threads:
+
+            # ------------------------------------------------
+            # Select the most recent conversation
+            #
+            # Backend returns:
+            # newest -> oldest
+            # ------------------------------------------------
+
+            selected_thread = (
+                patient_threads[0]
+            )
+
+
+            st.session_state[
+                "thread_id"
+            ] = selected_thread
+
+
+            # ------------------------------------------------
+            # Verify ownership
+            # ------------------------------------------------
+
+            if thread_belongs_to_patient(
+                selected_thread,
+                PatinetID
+            ):
+
+                # --------------------------------------------
+                # Load conversation from LangGraph
+                # --------------------------------------------
+
+                messages = load_conversation(
+                    selected_thread,
+                    PatinetID
+                )
+
+
+                # --------------------------------------------
+                # Rebuild message/history
+                # --------------------------------------------
+
+                (
+                    temp_messages,
+                    history
+                ) = rebuild_conversation_history(
+                    messages
+                )
+
+
+                # --------------------------------------------
+                # Save loaded conversation
+                # --------------------------------------------
+
+                st.session_state[
+                    "message_history"
+                ] = temp_messages
+
+
+                st.session_state[
+                    "history"
+                ] = history
+
+
+                # --------------------------------------------
+                # Reset DBT action
+                #
+                # Next user message will select a new action.
+                # --------------------------------------------
+
+                st.session_state[
+                    "action"
+                ] = []
+
+
+            else:
+
+                # ------------------------------------------------
+                # Ownership verification failed.
+                # Create a new conversation instead.
+                # ------------------------------------------------
+
+                st.sidebar.error(
+                    "Could not verify conversation ownership."
+                )
+
+                create_new_thread(
+                    PatinetID
+                )
+
+
+        # ====================================================
+        # CASE 2:
+        # No previous conversation exists
+        # ====================================================
+
         else:
-            for message in st.session_state.chat_history:
-                memory.save_context({'input':message['human']},{'output':message['AI']})
 
-        # Response Generation
-        #response = Response.response_generation_from_antropic(promptType,user_msg,memory)
-        response = Response.response_Generation_from_GPT4_test(promptType,user_msg,memory)
-        
-        if st.session_state.selfdis_value == 1:
-            response =  response +'  '+ "Finally, please keep in mind that this is the problem-understanding phase. I will ask a few questions to better understand your situation so I can support you effectively."  
-            # response =  response +'  '+ "最後に、これは問題を理解するための段階であることを忘れないでください。あなたをできるだけよく支えるために、私はあなたのことを理解したいと思っています。"
-            st.session_state.selfdis_value += 2
-        
-        print("Final Response: ",response)
-        
-        # Save in Session
-        message = {'human':user_msg,'AI':response}
-        st.session_state.chat_history.append(message)
+            create_new_thread(
+                PatinetID
+            )
 
-        # log_message("User", "          ", user_msg)
-        # log_message("Assistant",best_action,response)
 
-    with st.chat_message(ASSISTANT_NAME):
-        assistant_msg = ""
-        assistant_response_area = st.empty()
-        
-        # for chunk in response:
-        tmp_assistant_msg = response
-        assistant_msg += tmp_assistant_msg
-        assistant_response_area.write(assistant_msg)
+        # ----------------------------------------------------
+        # IMPORTANT:
+        # Rerun immediately so the loaded conversation
+        # appears without manually refreshing the page.
+        # ----------------------------------------------------
 
-    # st.session_state.state_log.append({"name": State_component, "msg": best_action})
-    # print("State Log Print for the system: ", st.session_state.state_log )
-    st.session_state.chat_log.append({"name": USER_NAME, "msg": user_msg})
-    st.session_state.chat_log.append({"name": ASSISTANT_NAME, "msg": assistant_msg})
+        st.rerun()
+
+
+else:
+
+    # ========================================================
+    # NO PATIENT ID
+    # ========================================================
+
+    st.session_state[
+        "active_patient_id"
+    ] = None
+
+
+    st.session_state[
+        "chat_threads"
+    ] = []
+
+
+    st.session_state[
+        "thread_id"
+    ] = None
+
+
+    st.session_state[
+        "message_history"
+    ] = []
+
+
+    st.session_state[
+        "history"
+    ] = []
+
+
+    st.session_state[
+        "action"
+    ] = []
+
+
+# ============================================================
+# NEW CHAT
+# ============================================================
+
+if st.sidebar.button(
+    "➕ New Chat",
+    use_container_width=True
+):
+
+    if not PatinetID:
+
+        st.sidebar.warning(
+            "Please enter your Patient ID first."
+        )
+
+    else:
+
+        reset_chat()
+
+        st.rerun()
+
+
+# ============================================================
+# MY CONVERSATIONS
+# ============================================================
+
+st.sidebar.header(
+    "My Conversations"
+)
+
+
+# Backend returns newest -> oldest,
+# so we display in the same order.
+
+for thread_id in (
+    st.session_state[
+        "chat_threads"
+    ]
+):
+
+    if st.sidebar.button(
+        str(thread_id),
+        key=f"thread_{thread_id}",
+        use_container_width=True
+    ):
+
+        # ----------------------------------------------------
+        # Verify ownership before loading
+        # ----------------------------------------------------
+
+        if not thread_belongs_to_patient(
+            thread_id,
+            PatinetID
+        ):
+
+            st.sidebar.error(
+                "Invalid conversation."
+            )
+
+            continue
+
+
+        # ----------------------------------------------------
+        # Change active thread
+        # ----------------------------------------------------
+
+        st.session_state[
+            "thread_id"
+        ] = thread_id
+
+
+        # ----------------------------------------------------
+        # Load conversation
+        # ----------------------------------------------------
+
+        messages = load_conversation(
+            thread_id,
+            PatinetID
+        )
+
+
+        # ----------------------------------------------------
+        # Rebuild session history
+        # ----------------------------------------------------
+
+        (
+            temp_messages,
+            history
+        ) = rebuild_conversation_history(
+            messages
+        )
+
+
+        st.session_state[
+            "message_history"
+        ] = temp_messages
+
+
+        st.session_state[
+            "history"
+        ] = history
+
+
+        # ----------------------------------------------------
+        # Reset action
+        # ----------------------------------------------------
+
+        st.session_state[
+            "action"
+        ] = []
+
+
+        st.rerun()
+
+
+# ============================================================
+# MAIN UI
+# ============================================================
+
+st.title(
+    "Self-Esteem Improvement Chatbot"
+)
+
+
+# ============================================================
+# PATIENT ID REQUIRED
+# ============================================================
+
+if not PatinetID:
+
+    st.info(
+        "Please enter your Patient ID in the sidebar to start."
+    )
+
+
+# ============================================================
+# DISPLAY EXISTING MESSAGES
+# ============================================================
+
+for message in (
+    st.session_state[
+        "message_history"
+    ]
+):
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.text(
+            message["content"]
+        )
+
+
+# ============================================================
+# CHAT INPUT
+# ============================================================
+
+user_input = st.chat_input(
+    "Type here..."
+)
+
+
+# ============================================================
+# PROCESS USER MESSAGE
+# ============================================================
+
+if user_input:
+
+    # --------------------------------------------------------
+    # Check Patient ID
+    # --------------------------------------------------------
+
+    if not PatinetID:
+
+        st.error(
+            "Please enter your Patient ID first."
+        )
+
+        st.stop()
+
+
+    # --------------------------------------------------------
+    # Check active thread
+    # --------------------------------------------------------
+
+    if not st.session_state.get(
+        "thread_id"
+    ):
+
+        create_new_thread(
+            PatinetID
+        )
+
+
+    # --------------------------------------------------------
+    # Verify active thread ownership
+    # --------------------------------------------------------
+
+    if not thread_belongs_to_patient(
+        st.session_state[
+            "thread_id"
+        ],
+        PatinetID
+    ):
+
+        create_new_thread(
+            PatinetID
+        )
+
+
+    # --------------------------------------------------------
+    # USER TIMESTAMP
+    # --------------------------------------------------------
+
+    user_time = get_current_time()
+
+
+    # --------------------------------------------------------
+    # USER MESSAGE DISPLAY
+    # --------------------------------------------------------
+
+    with st.chat_message(
+        "user"
+    ):
+
+        st.text(
+            user_input
+        )
+
+
+    # ========================================================
+    # REWARD / BEHAVIOR SELECTION
+    # ========================================================
+
+    Subset_prompt = (
+        response.determine_reward_with_behaviour(
+            st.session_state[
+                "history"
+            ],
+            user_input,
+            st.session_state[
+                "action"
+            ]
+        )
+    )
+
+
+    print(
+        "Reward Prompt",
+        Subset_prompt
+    )
+
+
+    actual_reward = (
+        response.SubsetSelection(
+            Subset_prompt
+        )
+    )
+
+
+    reward_data = json.loads(
+        actual_reward
+    )
+
+
+    # ========================================================
+    # GAME TREE
+    # ========================================================
+
+    best_action = gameTree.dataImport(
+        user_input,
+        reward_data
+    )
+
+
+    print(
+        "DBT Component",
+        best_action
+    )
+
+
+    st.session_state[
+        "action"
+    ] = best_action
+
+
+    # ========================================================
+    # SAVE USER MESSAGE TO SESSION HISTORY
+    # ========================================================
+
+    st.session_state[
+        "message_history"
+    ].append({
+
+        "time":
+            user_time,
+
+        "role":
+            "user",
+
+        "content":
+            user_input
+
+    })
+
+
+    st.session_state[
+        "history"
+    ].append({
+
+        "role":
+            "user",
+
+        "content":
+            user_input
+
+    })
+
+
+    # ========================================================
+    # LANGGRAPH CONFIG
+    # ========================================================
+
+    current_thread_id = (
+        st.session_state[
+            "thread_id"
+        ]
+    )
+
+
+    CONFIG = {
+
+        "configurable": {
+
+            "thread_id":
+                current_thread_id
+
+        },
+
+        "metadata": {
+
+            "thread_id":
+                current_thread_id,
+
+            "patient_id":
+                PatinetID
+
+        },
+
+        "run_name":
+            "chat_turn"
+
+    }
+
+
+    # ========================================================
+    # AI RESPONSE
+    # ========================================================
+
+    with st.chat_message(
+        "assistant"
+    ):
+
+        ai_message = st.write_stream(
+
+            message_chunk.content
+
+            for message_chunk, metadata
+
+            in chatbot.stream(
+
+                {
+                    "messages": [
+
+                        HumanMessage(
+                            content=user_input
+                        )
+
+                    ],
+
+                    "component":
+                        best_action
+
+                },
+
+                config=CONFIG,
+
+                stream_mode="messages"
+
+            )
+
+        )
+
+
+    # ========================================================
+    # ASSISTANT TIMESTAMP
+    # ========================================================
+
+    assistant_time = (
+        get_current_time()
+    )
+
+
+    # ========================================================
+    # SAVE ASSISTANT MESSAGE
+    # ========================================================
+
+    st.session_state[
+        "message_history"
+    ].append({
+
+        "time":
+            assistant_time,
+
+        "component":
+            best_action,
+
+        "role":
+            "assistant",
+
+        "content":
+            ai_message
+
+    })
+
+
+    st.session_state[
+        "history"
+    ].append({
+
+        "role":
+            "assistant",
+
+        "content":
+            ai_message
+
+    })
+
+
+# ============================================================
+# DOWNLOAD SECTION
+# ============================================================
+
+st.sidebar.divider()
+
+st.sidebar.header(
+    "Download Conversation"
+)
+
+
+# ============================================================
+# CREATE TXT
+# ============================================================
+
+conversation_txt = (
+    create_conversation_txt(
+        st.session_state.get(
+            "thread_id",
+            ""
+        )
+    )
+)
+
+
+# ============================================================
+# DOWNLOAD
+# ============================================================
+
+if PatinetID:
+
+    st.sidebar.download_button(
+
+        label=
+            "📥 Download Conversation",
+
+        data=
+            conversation_txt,
+
+        file_name=(
+            f"Chat_"
+            f"{get_current_time()}_"
+            f"{PatinetID}_"
+            f"{st.session_state['thread_id']}.txt"
+        ),
+
+        mime=
+            "text/plain",
+
+        use_container_width=
+            True,
+
+        key=
+            "download_conversation"
+
+    )
