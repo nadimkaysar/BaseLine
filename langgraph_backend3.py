@@ -58,6 +58,8 @@ def systemPrompt(component):
         4. Help students recognize their strengths, achievements, and positive qualities.
         5. Ask one open-ended question at a time and suggest small, achievable actions.
         6. Before ending the conversation, provide at least **three practical, personalized recommendations** to improve self-esteem and confidence.
+        7. After giving at least three sugesstion, then end the conversation.
+
     
       Keep your response within 50 to 60 words. 
     """
